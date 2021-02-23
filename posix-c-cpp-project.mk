@@ -104,7 +104,7 @@ ifeq ($(DEBUG), 1)
 else
     objSuffix := .o
 endif
-srcFiles := $(strip $(foreach srcDir, $(srcDirs), $(shell find $(srcDir) -type f -name *.c -or -name *.cpp -or -name *.S)))
+srcFiles := $(strip $(foreach srcDir, $(srcDirs), $(shell find $(srcDir) -type f -name *.c -or -name *.cpp -or -name *.S 2> /dev/null)))
 objFiles := $(srcFiles:%=$(buildDir)/%$(objSuffix))
 deps := $(objFiles:.o=.d)
 
@@ -162,9 +162,9 @@ endif
 
 arFlags += rcs
 
-cppProject := $(strip $(foreach srcDir, $(srcDirs), $(shell find $(srcDir) -type f -name *.cpp)))
+cppProject := $(strip $(foreach srcDir, $(srcDirs), $(shell find $(srcDir) -type f -name *.cpp 2> /dev/null)))
 ifeq ($(cppProject), )
-    cppProject = $(strip $(foreach includeDir, $(includeDirs), $(shell find $(includeDir) -type f -name *.hpp)))
+    cppProject = $(strip $(foreach includeDir, $(includeDirs), $(shell find $(includeDir) -type f -name *.hpp 2> /dev/null)))
 endif
 
 ifeq ($(cppProject), )
@@ -195,16 +195,16 @@ all: dist
 
 # BUILD ========================================================================
 .PHONY: build
-build: post-build
+build: $(BUILD_DEPS) post-build
 
 .PHONY: pre-build
-pre-build:
+pre-build: $(PRE_BUILD_DEPS)
     ifneq ($(PRE_BUILD), )
 	    $(v)$(PRE_BUILD)
     endif
 
 .PHONY: post-build
-post-build: pre-build $(buildArtifact)
+post-build: pre-build $(buildArtifact) $(POST_BUILD_DEPS)
     ifneq ($(postBuild), )
 	    $(v)$(postBuild)
     endif
