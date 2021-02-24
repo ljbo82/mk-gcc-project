@@ -107,10 +107,9 @@ endif
 srcDirs += $(SRC_DIRS)
 
 ifneq ($(wildcard include), )
-    includeDirs += include
-    ifeq ($(PROJ_TYPE, lib)
-        postDist += mkdir -p $(fullDistDir); cp -a -R include $(fullDistDir);
-    endif
+    includeDirs  += include
+    srcHeaders   := $(shell find include -type f -name *.h -or -name *.hpp 2> /dev/null)
+    distHeaders  := $(foreach srcHeader, $(srcHeaders), $(fullDistDir)/$(srcHeader))
 endif
 includeDirs += $(INCLUDE_DIRS)
 
@@ -124,26 +123,23 @@ objFiles := $(srcFiles:%=$(fullBuildDir)/%$(objSuffix))
 deps := $(objFiles:.o=.d)
 
 ifeq ($(DEBUG), 1)
-    artifactNameSuffix := _d
+    debugSuffix := _d
 endif
 
 ifeq ($(PROJ_TYPE), app)
-    artifactName := $(PROJ_NAME)$(artifactNameSuffix)
-    postDist     += mkdir -p $(fullDistDir)/bin; cp -a $(fullBuildDir)/$(artifactName) $(fullDistDir)/bin;
+    artifactName  := $(PROJ_NAME)$(debugSuffix)
+    postDistDeps  := $(fullDistDir)/bin/$(artifactName)
 else
-    postDist         += mkdir -p $(fullDistDir)/lib;
-    artifactBaseName := lib$(PROJ_NAME)$(projVersionMajor)$(artifactNameSuffix)
+    artifactBaseName := lib$(PROJ_NAME)$(projVersionMajor)$(debugSuffix)
     ifeq ($(LIB_TYPE), static)
-        postDist         += cp -a $(fullBuildDir)/*.a* $(fullDistDir)/lib;
         artifactBaseName := $(artifactBaseName).a
     else
-        postDist         += cp -a $(fullBuildDir)/*.so* $(fullDistDir)/lib;
         artifactBaseName := $(artifactBaseName).so
     endif
-    artifactName := $(artifactBaseName).$(projVersionMajor).$(projVersionMinor).$(projVersionPatch)
-    postBuild    := cd $(fullBuildDir); ln -sf $(artifactName) $(artifactBaseName);
+    artifactName  := $(artifactBaseName).$(projVersionMajor).$(projVersionMinor).$(projVersionPatch)
+    postBuildDeps := $(fullBuildDir)/$(artifactBaseName) $(fullBuildDir)/$(artifactName)
+    postDistDeps  := $(fullDistDir)/lib/$(artifactBaseName) $(fullDistDir)/lib/$(artifactName) $(distHeaders)
 endif
-buildArtifact := $(fullBuildDir)/$(artifactName)
 
 cFlags += -Wall
 cxxFlags += -Wall
@@ -199,7 +195,7 @@ all: dist
 
 # BUILD ========================================================================
 .PHONY: build
-build: $(BUILD_DEPS) post-build
+build: post-build
 
 .PHONY: pre-build
 pre-build: $(PRE_BUILD_DEPS)
@@ -208,10 +204,7 @@ pre-build: $(PRE_BUILD_DEPS)
     endif
 
 .PHONY: post-build
-post-build: pre-build $(buildArtifact) $(POST_BUILD_DEPS)
-    ifneq ($(postBuild), )
-	    $(v)$(postBuild)
-    endif
+post-build: pre-build $(BUILD_DEPS) $(fullBuildDir)/$(artifactName) $(postBuildDeps) $(POST_BUILD_DEPS)
     ifneq ($(POST_BUILD), )
 	    $(v)$(POST_BUILD)
     endif
@@ -235,27 +228,24 @@ post-clean: pre-clean
     endif
 # ==============================================================================
 
-# BUILD ========================================================================
+# DIST =========================================================================
 .PHONY: dist
-dist: build post-dist
+dist: post-dist
 
 .PHONY: pre-dist
-pre-dist:
+pre-dist: $(PRE_DIST_DEPS)
     ifneq ($(PRE_DIST), )
 	    $(v)$(PRE_DIST)
     endif
 
 .PHONY: post-dist
-post-dist: pre-dist
-    ifneq ($(postDist), )
-	    $(v)$(postDist)
-    endif
+post-dist: pre-dist $(DIST_DEPS) build $(postDistDeps) $(POST_DIST_DEPS)
     ifneq ($(POST_DIST), )
 	    $(v)$(POST_DIST)
     endif
 # ==============================================================================
 
-$(buildArtifact): $(objFiles)
+$(fullBuildDir)/$(artifactName): $(objFiles)
     ifeq ($(PROJ_TYPE), lib)
         ifeq ($(LIB_TYPE), shared)
 	        @printf "$(nl)[LD] $(objFiles)\n"
@@ -264,10 +254,32 @@ $(buildArtifact): $(objFiles)
 	        @printf "$(nl)[AR] $(objFiles)\n"
 	        $(v)$(AR) $(strip $(arFlags) $@ $(objFiles))
         endif
+	    cd $(fullBuildDir); ln -sf $(artifactName) $(artifactBaseName)
     else
 	    @printf "$(nl)[LD] $(objFiles)\n"
 	    $(v)$(LD) $(strip -o $@ $(objFiles) $(ldFlags) $(LDFLAGS))
     endif
+
+$(fullBuildDir)/$(artifactBaseName): $(fullBuildDir)/$(artifactName)
+    ifeq ($(PROJ_TYPE), lib)
+	    $(v)cd $(fullBuildDir); ln -sf $(artifactName) $(artifactBaseName)
+    endif
+
+$(fullDistDir)/bin/$(artifactName): $(fullBuildDir)/$(artifactName)
+	$(v)mkdir -p $(fullDistDir)/bin
+	$(v)cp $(fullBuildDir)/$(artifactName) $(fullDistDir)/bin
+
+$(fullDistDir)/lib/$(artifactBaseName): $(fullBuildDir)/$(artifactBaseName)
+	$(v)mkdir -p $(fullDistDir)/lib
+	$(v)cp -a $(fullBuildDir)/$(artifactBaseName) $(fullDistDir)/lib
+
+$(fullDistDir)/lib/$(artifactName): $(fullBuildDir)/$(artifactName)
+	$(v)mkdir -p $(fullDistDir)/lib
+	$(v)cp $(fullBuildDir)/$(artifactName) $(fullDistDir)/lib
+
+$(distHeaders): $(srcHeaders)
+	$(v)mkdir -p $(fullDistDir)/include
+	$(v)cp -a $< $@
 
 $(fullBuildDir)/%.c$(objSuffix): %.c
 	@mkdir -p $(dir $@)
